@@ -1,0 +1,8 @@
+.venv/
+expanded/
+tools/
+dataset/
+__pycache__/
+*.pyc
+*.md
+judge_simulator.py

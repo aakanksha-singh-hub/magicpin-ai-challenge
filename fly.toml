@@ -1,0 +1,37 @@
+app = "vera-message-engine"
+primary_region = "bom"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  VERA_SNAPSHOT = "/data/vera_snapshot.json"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # never sleep: in-memory context must survive the whole judged window
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 80
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "3s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/v1/healthz"
+
+[mounts]
+  source = "vera_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
