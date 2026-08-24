@@ -134,7 +134,7 @@ METADATA = {
                  "intent-transition and hostile handling."),
     "contact_email": os.environ.get("VERA_CONTACT", "aakanksha.singh0205@gmail.com"),
     "version": "1.0.0",
-    "submitted_at": os.environ.get("VERA_SUBMITTED_AT", "2026-08-24T00:00:00Z"),
+    "submitted_at": os.environ.get("VERA_SUBMITTED_AT", "2026-08-24T12:49:29Z"),
     "endpoints": ["/v1/context", "/v1/tick", "/v1/reply", "/v1/healthz", "/v1/metadata"],
 }
 
