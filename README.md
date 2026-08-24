@@ -9,6 +9,11 @@ POST /v1/context   POST /v1/tick   POST /v1/reply   GET /v1/healthz   GET /v1/me
 
 Run locally: `uvicorn vera.app:app --host 0.0.0.0 --port 8080`
 
+Interactive API docs at **`/docs`** (Swagger UI), **`/redoc`**, and the raw schema at
+`/openapi.json`. Request bodies are documented there but parsed leniently at runtime —
+unknown fields are ignored and bad input returns a documented JSON error rather than a
+framework 422, because the harness scores malformed responses as a penalty.
+
 ---
 
 ## The finding that shaped the design

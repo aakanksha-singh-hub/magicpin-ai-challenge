@@ -23,7 +23,101 @@ from .compose import compose
 from .converse import respond
 from .store import SCOPES, Store, parse_iso, utcnow_iso
 
-app = FastAPI(title="Vera message engine", docs_url=None, redoc_url=None)
+TAGS = [
+    {"name": "probes", "description": "Liveness and identity. Polled by the judge every 60s; "
+                                      "three consecutive healthz failures disqualify the bot."},
+    {"name": "context", "description": "Incremental context push across the four layers. "
+                                       "Idempotent on (scope, context_id, version)."},
+    {"name": "conversation", "description": "Proactive sends and inbound replies."},
+    {"name": "admin", "description": "Optional teardown."},
+]
+
+DESCRIPTION = """
+Deterministic message engine behind **Vera**, magicpin's merchant AI assistant.
+
+`compose(category, merchant, trigger, customer?)` returns the next WhatsApp message,
+its CTA, the sending identity, a suppression key and a rationale.
+
+**No LLM in the request path.** Every number in every message is registered from a pushed
+context with provenance before it can be used, so fabrication is structurally impossible
+rather than prompt-discouraged. Typical `/v1/tick` latency is single-digit milliseconds.
+
+Request bodies are parsed leniently on purpose: unknown fields are ignored and malformed
+input returns a documented JSON error rather than a framework 422, because the judge
+scores malformed responses as a penalty.
+"""
+
+app = FastAPI(
+    title="Vera message engine",
+    description=DESCRIPTION,
+    version="1.0.0",
+    openapi_tags=TAGS,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    contact={"name": "Aakanksha Singh", "email": "aakanksha.singh0205@gmail.com"},
+)
+
+# ---------------------------------------------------------------- schemas
+# Declared for the OpenAPI document only. Runtime parsing stays hand-rolled and
+# lenient so that a surprising payload degrades gracefully instead of 422-ing.
+
+_CONTEXT_BODY = {
+    "required": True,
+    "content": {"application/json": {"schema": {
+        "type": "object",
+        "required": ["scope", "context_id", "version", "payload"],
+        "properties": {
+            "scope": {"type": "string", "enum": list(SCOPES),
+                      "description": "Which context layer this payload belongs to."},
+            "context_id": {"type": "string", "example": "m_001_drmeera_dentist_delhi"},
+            "version": {"type": "integer", "minimum": 1, "example": 3,
+                        "description": "Higher replaces atomically; equal is a no-op; "
+                                       "lower is rejected with 409."},
+            "payload": {"type": "object", "description": "The full context object."},
+            "delivered_at": {"type": "string", "format": "date-time"},
+        },
+    }, "example": {"scope": "merchant", "context_id": "m_001_drmeera_dentist_delhi",
+                   "version": 3, "payload": {"identity": {}, "performance": {}, "offers": []},
+                   "delivered_at": "2026-04-29T10:00:00Z"}}},
+}
+
+_TICK_BODY = {
+    "required": True,
+    "content": {"application/json": {"schema": {
+        "type": "object",
+        "properties": {
+            "now": {"type": "string", "format": "date-time",
+                    "description": "Current simulated time."},
+            "available_triggers": {"type": "array", "items": {"type": "string"},
+                                   "description": "Trigger ids the judge considers live now. "
+                                                  "Treated as authoritative over expires_at."},
+        },
+    }, "example": {"now": "2026-04-26T10:30:00Z",
+                   "available_triggers": ["trg_001_research_digest_dentists"]}}},
+}
+
+_REPLY_BODY = {
+    "required": True,
+    "content": {"application/json": {"schema": {
+        "type": "object",
+        "required": ["conversation_id", "message"],
+        "properties": {
+            "conversation_id": {"type": "string", "example": "conv_m_001_research_digest"},
+            "merchant_id": {"type": "string", "nullable": True},
+            "customer_id": {"type": "string", "nullable": True},
+            "from_role": {"type": "string", "enum": ["merchant", "customer"]},
+            "message": {"type": "string", "example": "Ok lets do it. Whats next?"},
+            "received_at": {"type": "string", "format": "date-time"},
+            "turn_number": {"type": "integer", "example": 2},
+        },
+    }}},
+}
+
+
+def _ex(example: dict, description: str = "Success") -> dict:
+    return {200: {"description": description,
+                  "content": {"application/json": {"example": example}}}}
 STORE = Store()
 START = time.time()
 
@@ -82,8 +176,11 @@ async def _json(request: Request) -> dict:
 
 # ------------------------------------------------------------------ probes
 
-@app.get("/v1/healthz")
-@app.get("/healthz")
+@app.get("/v1/healthz", tags=["probes"], summary="Liveness probe",
+         responses=_ex({"status": "ok", "uptime_seconds": 3600,
+                        "contexts_loaded": {"category": 5, "merchant": 50,
+                                            "customer": 200, "trigger": 100}}))
+@app.get("/healthz", include_in_schema=False)
 async def healthz() -> JSONResponse:
     counts = STORE.counts()
     return JSONResponse({
@@ -95,15 +192,28 @@ async def healthz() -> JSONResponse:
     })
 
 
-@app.get("/v1/metadata")
-@app.get("/metadata")
+@app.get("/v1/metadata", tags=["probes"], summary="Bot identity and approach",
+         responses=_ex(METADATA))
+@app.get("/metadata", include_in_schema=False)
 async def metadata() -> JSONResponse:
     return JSONResponse(METADATA)
 
 
 # ------------------------------------------------------------------ context
 
-@app.post("/v1/context")
+@app.post("/v1/context", tags=["context"], summary="Push or update a context",
+          openapi_extra={"requestBody": _CONTEXT_BODY},
+          responses={200: {"description": "Stored, or an accepted no-op for an identical version",
+                           "content": {"application/json": {"example": {
+                               "accepted": True, "ack_id": "ack_merchant_m_001_v3",
+                               "stored_at": "2026-04-29T10:00:00.123Z"}}}},
+                     400: {"description": "Malformed: unknown scope, missing id, bad payload",
+                           "content": {"application/json": {"example": {
+                               "accepted": False, "reason": "invalid_scope", "details": "..."}}}},
+                     409: {"description": "A higher version is already stored",
+                           "content": {"application/json": {"example": {
+                               "accepted": False, "reason": "stale_version",
+                               "current_version": 5}}}}})
 async def push_context(request: Request) -> JSONResponse:
     body = await _json(request)
     scope = str(body.get("scope") or "").strip()
@@ -135,7 +245,22 @@ async def push_context(request: Request) -> JSONResponse:
 
 # ------------------------------------------------------------------ tick
 
-@app.post("/v1/tick")
+@app.post("/v1/tick", tags=["conversation"],
+          summary="Wake-up; the bot decides what (if anything) to send",
+          description="Returns at most one action per merchant per tick, capped at 20. "
+                      "An empty list is a valid and deliberate answer -- restraint is "
+                      "rewarded and spam is penalised.",
+          openapi_extra={"requestBody": _TICK_BODY},
+          responses=_ex({"actions": [{
+              "conversation_id": "conv_m_001_drmeera_research_digest",
+              "merchant_id": "m_001_drmeera_dentist_delhi", "customer_id": None,
+              "send_as": "vera", "trigger_id": "trg_001_research_digest_dentists",
+              "template_name": "vera_research_digest_v1",
+              "template_params": ["Meera", "...", "..."],
+              "body": "Dr. Meera - one item from this week's clinical round-up ...",
+              "cta": "binary_yes_no", "suppression_key": "research:dentists:2026-W17",
+              "rationale": "research_digest trigger (urgency 2); anchored on the "
+                           "merchant's own views/calls ..."}]}))
 async def tick(request: Request) -> JSONResponse:
     body = await _json(request)
     STORE.stats["ticks"] += 1
@@ -193,7 +318,16 @@ async def tick(request: Request) -> JSONResponse:
 
 # ------------------------------------------------------------------ reply
 
-@app.post("/v1/reply")
+@app.post("/v1/reply", tags=["conversation"], summary="Inbound reply from merchant or customer",
+          description="Returns exactly one of `send`, `wait` or `end`. Auto-reply detection is "
+                      "keyed on the merchant rather than the conversation, because the same "
+                      "canned text arrives across different conversation ids.",
+          openapi_extra={"requestBody": _REPLY_BODY},
+          responses=_ex({"action": "send",
+                         "body": "Done - I'm drafting it now ...",
+                         "cta": "binary_confirm_cancel",
+                         "rationale": "Explicit go-ahead detected; switching from proposal to "
+                                      "execution with no further qualifying questions."}))
 async def reply(request: Request) -> JSONResponse:
     body = await _json(request)
     STORE.stats["replies"] += 1
@@ -221,14 +355,20 @@ async def reply(request: Request) -> JSONResponse:
 
 # ------------------------------------------------------------------ teardown
 
-@app.post("/v1/teardown")
+@app.post("/v1/teardown", tags=["admin"], summary="Wipe all stored context and conversations",
+          responses=_ex({"ok": True, "wiped_at": "2026-04-29T11:00:00.000Z"}))
 async def teardown() -> JSONResponse:
     STORE.teardown()
     return JSONResponse({"ok": True, "wiped_at": utcnow_iso()})
 
 
-@app.get("/")
+@app.get("/", tags=["probes"], summary="Service index")
 async def root() -> JSONResponse:
-    return JSONResponse({"service": "vera-message-engine", "endpoints":
-                         ["/v1/healthz", "/v1/metadata", "/v1/context",
-                          "/v1/tick", "/v1/reply"]})
+    return JSONResponse({
+        "service": "vera-message-engine",
+        "version": METADATA["version"],
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+        "endpoints": ["/v1/context", "/v1/tick", "/v1/reply",
+                      "/v1/healthz", "/v1/metadata"],
+    })
