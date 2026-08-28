@@ -7,6 +7,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY vera/ ./vera/
+# read-only seed data for the /console demo source; /v1/* never reads it
+COPY dataset/ ./dataset/
 
 ENV PORT=8080
 EXPOSE 8080

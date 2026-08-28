@@ -9,8 +9,8 @@ POST /v1/context   POST /v1/tick   POST /v1/reply   GET /v1/healthz   GET /v1/me
 
 Run locally: `uvicorn vera.app:app --host 0.0.0.0 --port 8080`
 
-Interactive API docs at **`/docs`** (Swagger UI), **`/redoc`**, and the raw schema at
-`/openapi.json`. Request bodies are documented there but parsed leniently at runtime —
+Inspection console at **`/console`**, interactive API docs at **`/docs`** (Swagger UI),
+**`/redoc`**, and the raw schema at `/openapi.json`. Request bodies are documented there but parsed leniently at runtime —
 unknown fields are ignored and bad input returns a documented JSON error rather than a
 framework 422, because the harness scores malformed responses as a penalty.
 
@@ -76,6 +76,7 @@ prompt; it can't be expressed.
 | `voice.py` | per-category register, guardian/senior addressing, Hinglish code-mix, taboo list |
 | `validate.py` | URLs, single CTA, jargon, taboo words, ungrounded numbers, anchor floor |
 | `converse.py` | inbound classifier + reply FSM |
+| `console.py` | read-only inspection UI at `/console`; outside the scored surface |
 
 ## Decisions worth calling out
 
@@ -108,6 +109,26 @@ expected rather than sold against; a new competitor undercutting on price gets a
 every trigger reads expired — a hard expiry gate would send nothing and score zero. The
 judge's `available_triggers` is treated as the authority. Likewise the payload's own
 `days_until` wins over clock arithmetic, because that's the number the judge can verify.
+
+## The console
+
+`/console` renders the part of this engine an HTTP transcript cannot show. Pick a merchant
+and a trigger, and every number in the composed message is clickable: it resolves to the
+registered fact behind it, that fact's provenance, and — the part that drove the whole
+design — whether the judge can actually see it in its own scoring payload. A number with no
+fact behind it renders red, which is exactly what `validate.py` refuses to emit.
+
+Three more panels: the full fact table for that compose (a number absent from it cannot
+appear in the message), a tick trace showing which trigger won each merchant and the reason
+every other one was dropped, and a reply box that drives the real FSM — send the same
+auto-reply four times and watch it flag, wait, then end.
+
+Two sources. **Demo** runs on the shipped seed files. **Judge live** reads the context this
+instance has actually been sent, so during a judged run the console shows the real thing.
+
+It is read-only, namespaced entirely under `/console`, and never writes to the store the
+judge is scoring. Registration is wrapped in a `try` — if the console fails to import, the
+five scored endpoints come up regardless.
 
 ## Conversation handling
 

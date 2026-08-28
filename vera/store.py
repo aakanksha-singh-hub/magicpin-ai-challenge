@@ -215,6 +215,10 @@ class Store:
     # ---------------- snapshot ----------------
 
     def _maybe_snapshot(self) -> None:
+        # an empty path means "never persist" -- used by the console's demo
+        # store, whose data is disposable and must not touch the judged snapshot
+        if not self.snapshot_path:
+            return
         now = time.time()
         if not self._dirty or now - self._last_snapshot < SNAPSHOT_EVERY_SECONDS:
             return

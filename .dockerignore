@@ -1,7 +1,8 @@
 .venv/
 expanded/
 tools/
-dataset/
+# dataset/ is needed at runtime for the /console demo source
+dataset/generate_dataset.py
 __pycache__/
 *.pyc
 *.md

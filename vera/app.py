@@ -45,6 +45,11 @@ rather than prompt-discouraged. Typical `/v1/tick` latency is single-digit milli
 Request bodies are parsed leniently on purpose: unknown fields are ignored and malformed
 input returns a documented JSON error rather than a framework 422, because the judge
 scores malformed responses as a penalty.
+
+A human-facing inspection console lives at **`/console`** — it shows which registered fact
+every number in a message traces back to, whether that fact is visible in the judge's own
+scoring payload, why one trigger won the tick, and what was dropped. It is read-only and
+sits entirely outside the scored surface.
 """
 
 app = FastAPI(
@@ -362,6 +367,15 @@ async def teardown() -> JSONResponse:
     return JSONResponse({"ok": True, "wiped_at": utcnow_iso()})
 
 
+# Human-facing inspection console. Registered last, lives entirely under
+# /console, and never writes to STORE -- the scored surface is unchanged.
+try:
+    from .console import register as _register_console
+    _register_console(app, STORE)
+except Exception as exc:  # never let the console break the judged endpoints
+    print(f"[vera] console unavailable: {exc!r}")
+
+
 @app.get("/", tags=["probes"], summary="Service index")
 async def root() -> JSONResponse:
     return JSONResponse({
@@ -369,6 +383,7 @@ async def root() -> JSONResponse:
         "version": METADATA["version"],
         "docs": "/docs",
         "openapi": "/openapi.json",
+        "console": "/console",
         "endpoints": ["/v1/context", "/v1/tick", "/v1/reply",
                       "/v1/healthz", "/v1/metadata"],
     })
