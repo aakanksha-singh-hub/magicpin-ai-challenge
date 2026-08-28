@@ -1,0 +1,50 @@
+# Keeps the Render free instance from idling out, and doubles as an uptime alarm.
+#
+# Why this exists: the bot holds pushed context in memory. Render's free tier
+# spins a service down after ~15 minutes with no inbound traffic, and a spin-down
+# mid-run drops every context the judge pushed, so the next tick returns nothing.
+# A request every 10 minutes keeps the instance warm with 5 minutes of margin.
+#
+# The job FAILS if the bot does not answer, so GitHub emails you rather than
+# leaving a dead endpoint quietly dead during the judging window.
+
+name: keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:        # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # override in Settings → Secrets and variables → Actions → Variables
+      BOT_URL: ${{ vars.BOT_URL || 'https://magicpin-ai-challenge-ozhb.onrender.com' }}
+    steps:
+      - name: Ping /v1/healthz
+        run: |
+          set -uo pipefail
+          # a cold instance can take ~50s to boot, so allow three tries before
+          # calling it down -- and keep the total well inside timeout-minutes
+          for attempt in 1 2 3; do
+            code=$(curl -sS -m 60 -o body.json -w '%{http_code}' \
+                   "$BOT_URL/v1/healthz" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "OK on attempt $attempt"
+              cat body.json; echo
+              exit 0
+            fi
+            echo "attempt $attempt: HTTP $code"
+            [ "$attempt" -lt 3 ] && sleep 20
+          done
+          echo "::error::$BOT_URL/v1/healthz did not return 200 after 3 attempts"
+          exit 1

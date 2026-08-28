@@ -123,6 +123,33 @@ scored endpoints coming up.
 outcomes (history records *that* a merchant replied, never whether the thing got done), and a
 structured price list (offers are title strings, so the engine can't pick *which* to push).
 
+## Keeping it awake
+
+The bot holds pushed context in memory, and Render's free tier spins a service down after
+~15 minutes without inbound traffic. A spin-down mid-run drops everything the judge pushed,
+so the next tick returns nothing. Two independent layers guard against that:
+
+| Layer | Where | Survives |
+|---|---|---|
+| `.github/workflows/keepalive.yml` | GitHub Actions, every 10 min | anything short of GitHub itself being down |
+| `VERA_KEEPALIVE_URL` | in-process self-ping, `app.py` | idle spin-down, but dies with the container |
+
+The workflow also **fails loudly** when the bot doesn't answer, so a dead endpoint sends an
+email rather than sitting quietly dead through the judging window. Point it at a different
+host by setting an Actions variable named `BOT_URL`.
+
+To arm the second layer, add these in Render → Environment:
+
+```
+VERA_KEEPALIVE_URL      https://magicpin-ai-challenge-ozhb.onrender.com
+VERA_KEEPALIVE_SECONDS  600
+VERA_SUBMITTED_AT       <the real submission timestamp>
+```
+
+The self-ping leaves the instance and returns through Render's edge, so it counts as inbound
+traffic. Two layers because they fail differently: the workflow keeps working if the app
+wedges, and the self-ping keeps working if GitHub throttles the schedule.
+
 ## Testing
 
 ```bash
