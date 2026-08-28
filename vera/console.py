@@ -176,6 +176,10 @@ def _merchant_row(m: dict) -> dict:
 
 
 def _store_for(source: str, judged: Store) -> tuple[Store | None, str]:
+    """The UI only ever asks for "demo". ?source=live is kept for inspecting a
+    real harness run over curl, but is deliberately not reachable from the page:
+    the judged store is empty except during a run, so a live view would show a
+    reviewer a blank console nearly every time they opened it."""
     if source == "live":
         return judged, "live"
     d = demo_store()
@@ -359,10 +363,6 @@ h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px}
 h1 span{color:var(--dim);font-weight:400}
 .sub{color:var(--faint);font-size:12px}
 .spacer{flex:1}
-.toggle{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
-.toggle button{background:transparent;border:0;color:var(--dim);padding:5px 13px;
-  font-size:12px;cursor:pointer;font-family:inherit}
-.toggle button.on{background:var(--acc);color:#05080d;font-weight:600}
 .pill{font-family:var(--mono);font-size:11px;color:var(--dim);
   border:1px solid var(--line);border-radius:20px;padding:3px 10px}
 main{display:grid;grid-template-columns:270px minmax(0,1fr);gap:0;
@@ -437,10 +437,6 @@ button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line
   <span class="sub" id="tagline">deterministic compose(category, merchant, trigger, customer?)</span>
   <span class="spacer"></span>
   <span class="pill" id="counts">—</span>
-  <div class="toggle">
-    <button id="tDemo" class="on" onclick="setSource('demo')">Demo data</button>
-    <button id="tLive" onclick="setSource('live')">Judge&nbsp;live</button>
-  </div>
 </header>
 
 <main>
@@ -450,7 +446,12 @@ button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line
 
 <script>
 const $ = s => document.querySelector(s);
-let SRC='demo', MERCHANTS=[], SEL=null, DETAIL=null, OUT=null, TAB='message', LOG=[];
+// The console always runs on the shipped seed data. It deliberately does not
+// read the judged store: that store is empty except during an actual harness
+// run, so a live view would show a reviewer a blank page nearly every time.
+// The server still accepts ?source=live for inspecting a run over curl.
+const SRC='demo';
+let MERCHANTS=[], SEL=null, DETAIL=null, OUT=null, TAB='message', LOG=[];
 
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => n==null ? '—' : (typeof n==='number' ? n.toLocaleString('en-IN') : n);
@@ -460,26 +461,16 @@ async function api(path, opts){
   return r.json();
 }
 
-function setSource(s){
-  SRC=s; SEL=null; DETAIL=null; OUT=null;
-  $('#tDemo').className = s==='demo'?'on':''; $('#tLive').className = s==='live'?'on':'';
-  load();
-}
-
 async function load(){
   const d = await api('/console/api/state?source='+SRC);
   MERCHANTS = d.merchants||[];
-  const c = d.counts||{}, lc = d.live_counts||{};
+  const c = d.counts||{};
   $('#counts').textContent =
-    `demo ${(d.demo_available?'on':'off')} · live: ${lc.merchant||0}m ${lc.trigger||0}t ${lc.customer||0}c`;
-  $('#tagline').textContent = SRC==='live'
-    ? 'showing the context the judge has actually pushed to this instance'
-    : 'deterministic compose(category, merchant, trigger, customer?)';
+    `${c.merchant||0} merchants · ${c.trigger||0} triggers · ${c.customer||0} customers · ${c.category||0} categories`;
   if(!MERCHANTS.length){
-    $('#list').innerHTML = '<div class="empty">'+(SRC==='live'
-      ? 'No merchant context pushed yet.<br><br>The judge pushes context to<br>POST /v1/context before ticking.'
-      : 'Seed data unavailable.')+'</div>';
-    $('#work').innerHTML='<div class="empty">Nothing to show for this source.</div>';
+    $('#list').innerHTML = '<div class="empty">Seed data unavailable.</div>';
+    $('#work').innerHTML = '<div class="empty">The engine is fine — the console just has no data to render.<br>'
+      + 'The scored endpoints are unaffected: try <b>/v1/healthz</b> or <b>/docs</b>.</div>';
     return;
   }
   $('#list').innerHTML = MERCHANTS.map(m=>{

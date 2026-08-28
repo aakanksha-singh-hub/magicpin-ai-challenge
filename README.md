@@ -123,8 +123,10 @@ appear in the message), a tick trace showing which trigger won each merchant and
 every other one was dropped, and a reply box that drives the real FSM — send the same
 auto-reply four times and watch it flag, wait, then end.
 
-Two sources. **Demo** runs on the shipped seed files. **Judge live** reads the context this
-instance has actually been sent, so during a judged run the console shows the real thing.
+It runs on the shipped seed files, so it is always populated. It deliberately does not
+render the judged store from the page: that store is empty except during an actual harness
+run, and a blank console reads as broken rather than as correct. `?source=live` on the
+console's own JSON routes still exposes real judged state for inspecting a run over curl.
 
 It is read-only, namespaced entirely under `/console`, and never writes to the store the
 judge is scoring. Registration is wrapped in a `try` — if the console fails to import, the
