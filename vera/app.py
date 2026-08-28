@@ -24,32 +24,20 @@ from .converse import respond
 from .store import SCOPES, Store, parse_iso, utcnow_iso
 
 TAGS = [
-    {"name": "probes", "description": "Liveness and identity. Polled by the judge every 60s; "
-                                      "three consecutive healthz failures disqualify the bot."},
-    {"name": "context", "description": "Incremental context push across the four layers. "
-                                       "Idempotent on (scope, context_id, version)."},
+    {"name": "probes", "description": "Liveness and identity."},
+    {"name": "context", "description": "Context push. Idempotent on (scope, context_id, version)."},
     {"name": "conversation", "description": "Proactive sends and inbound replies."},
-    {"name": "admin", "description": "Optional teardown."},
+    {"name": "admin", "description": "Teardown."},
 ]
 
 DESCRIPTION = """
 Deterministic message engine behind **Vera**, magicpin's merchant AI assistant.
 
-`compose(category, merchant, trigger, customer?)` returns the next WhatsApp message,
-its CTA, the sending identity, a suppression key and a rationale.
+`compose(category, merchant, trigger, customer?)` returns the next message, its CTA,
+the sending identity, a suppression key and a rationale. No LLM in the request path;
+typical `/v1/tick` latency is single-digit milliseconds.
 
-**No LLM in the request path.** Every number in every message is registered from a pushed
-context with provenance before it can be used, so fabrication is structurally impossible
-rather than prompt-discouraged. Typical `/v1/tick` latency is single-digit milliseconds.
-
-Request bodies are parsed leniently on purpose: unknown fields are ignored and malformed
-input returns a documented JSON error rather than a framework 422, because the judge
-scores malformed responses as a penalty.
-
-A human-facing inspection console lives at **`/console`** — it shows which registered fact
-every number in a message traces back to, whether that fact is visible in the judge's own
-scoring payload, why one trigger won the tick, and what was dropped. It is read-only and
-sits entirely outside the scored surface.
+Inspection console at [`/console`](/console).
 """
 
 app = FastAPI(
@@ -376,8 +364,9 @@ except Exception as exc:  # never let the console break the judged endpoints
     print(f"[vera] console unavailable: {exc!r}")
 
 
-@app.get("/", tags=["probes"], summary="Service index")
-async def root() -> JSONResponse:
+@app.get("/index.json", tags=["probes"], summary="Service index",
+         description="Machine-readable index. The homepage itself serves the console.")
+async def service_index() -> JSONResponse:
     return JSONResponse({
         "service": "vera-message-engine",
         "version": METADATA["version"],

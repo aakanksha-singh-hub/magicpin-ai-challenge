@@ -195,6 +195,10 @@ def _now() -> datetime:
 def register(app, judged: Store) -> None:
     """Attach the console to the app. Judged routes are not touched."""
 
+    # the console is the homepage: a reviewer who opens the bare URL should land
+    # on something that explains itself, not a JSON blob. The machine-readable
+    # index moved to /index.json.
+    @app.get("/", include_in_schema=False)
     @app.get("/console", include_in_schema=False)
     async def console_page() -> HTMLResponse:
         return HTMLResponse(PAGE)
