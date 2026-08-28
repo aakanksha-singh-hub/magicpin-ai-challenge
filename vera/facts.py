@@ -19,6 +19,15 @@ from typing import Any
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+# smallest peer gap worth putting in a sentence. Below this the merchant is at
+# parity, and "you're converting 0% better than the category average" is filler
+# that costs specificity rather than earning it -- so no comparison fact is
+# registered at all and the prose falls through to a non-comparative branch.
+PEER_MATERIAL_GAP = 0.05
+
+# smallest absolute action count worth naming as a payoff
+MIN_UPLIFT_ACTIONS = 3
+
 
 # ---------------------------------------------------------------- formatting
 
@@ -497,13 +506,18 @@ def _derived_facts(pack: FactPack, category: dict, merchant: dict) -> None:
         per_k = calls / (views / 1000.0)
         pack.add("derived.calls_per_1k", round(per_k, 1), f"{per_k:.1f}",
                  "calls per 1,000 views", visible=True, source="derived from views+calls")
+        # the denominator is a unit, not a claim, but it still surfaces as a
+        # numeric token in "N calls per 1,000 views" -- register it so the
+        # grounding check reads the rate as one fact instead of flagging 1,000
+        pack.add("derived.per_1k_basis", 1000, "1,000",
+                 "per-1,000-views basis", source="unit of derived.calls_per_1k")
         # benchmark against this category's own median, and only claim a gap
         # when the merchant is genuinely behind it
         bench = pack.get("peer.avg_ctr")
         if (isinstance(bench, (int, float)) and bench
                 and isinstance(ctr, (int, float)) and ctr < bench):
             missed = int(round(views * (bench - ctr)))
-            if missed > 0:
+            if missed >= MIN_UPLIFT_ACTIONS:
                 pack.add("derived.gap_calls", missed, fmt_int(missed),
                          "actions behind the category median", source="derived")
 
@@ -512,31 +526,37 @@ def _derived_facts(pack: FactPack, category: dict, merchant: dict) -> None:
         pack.add("peer.ctr", peer_ctr, fmt_pct(peer_ctr), "peer median CTR",
                  source="CategoryContext.peer_stats")
         gap = (ctr - peer_ctr) / peer_ctr
-        pack.add("derived.ctr_vs_peer", round(gap, 3), fmt_abs_pct(gap),
-                 "CTR vs peer median", source="derived")
-        pack.add("derived.ctr_side", gap, "above" if gap >= 0 else "below",
-                 "CTR side of peer", source="derived")
+        if abs(gap) >= PEER_MATERIAL_GAP:
+            pack.add("derived.ctr_vs_peer", round(gap, 3), fmt_abs_pct(gap),
+                     "CTR vs peer median", source="derived")
+            pack.add("derived.ctr_side", gap, "above" if gap > 0 else "below",
+                     "CTR side of peer", source="derived")
         if views and ctr < peer_ctr:
             uplift = int(round(views * (peer_ctr - ctr)))
-            if uplift > 0:
+            # same materiality rule in absolute terms: "roughly 2 extra actions
+            # a month" is inside week-to-week noise and reads as a weak reason
+            # to act, so the prose falls through to the percentage framing
+            if uplift >= MIN_UPLIFT_ACTIONS:
                 pack.add("derived.ctr_uplift_actions", uplift, fmt_int(uplift),
                          "extra actions at peer CTR", source="derived")
 
     peer_views = pack.get("peer.avg_views_30d")
     if isinstance(views, (int, float)) and isinstance(peer_views, (int, float)) and peer_views:
         gap = (views - peer_views) / peer_views
-        pack.add("derived.views_vs_peer", round(gap, 3), fmt_abs_pct(gap),
-                 "views vs peer average", source="derived")
-        pack.add("derived.views_side", gap, "above" if gap >= 0 else "below",
-                 "views side of peer", source="derived")
+        if abs(gap) >= PEER_MATERIAL_GAP:
+            pack.add("derived.views_vs_peer", round(gap, 3), fmt_abs_pct(gap),
+                     "views vs peer average", source="derived")
+            pack.add("derived.views_side", gap, "above" if gap > 0 else "below",
+                     "views side of peer", source="derived")
 
     peer_calls = pack.get("peer.avg_calls_30d")
     if isinstance(calls, (int, float)) and isinstance(peer_calls, (int, float)) and peer_calls:
         gap = (calls - peer_calls) / peer_calls
-        pack.add("derived.calls_vs_peer", round(gap, 3), fmt_abs_pct(gap),
-                 "calls vs peer average", source="derived")
-        pack.add("derived.calls_side", gap, "above" if gap >= 0 else "below",
-                 "calls side of peer", source="derived")
+        if abs(gap) >= PEER_MATERIAL_GAP:
+            pack.add("derived.calls_vs_peer", round(gap, 3), fmt_abs_pct(gap),
+                     "calls vs peer average", source="derived")
+            pack.add("derived.calls_side", gap, "above" if gap > 0 else "below",
+                     "calls side of peer", source="derived")
 
     # seasonal beat matching the current month
     month = MONTHS[pack.today.month - 1]

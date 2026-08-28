@@ -97,6 +97,13 @@ def _mix(ctx: Ctx, text: str) -> str:
 def research_digest(ctx: Ctx) -> MessagePlan:
     item = digest_item(ctx)
     title = item["title"] or ctx.f("trg.top_item_id").replace("_", " ")
+    # every hook below promises "one item worth your time: <title>". A trigger
+    # whose digest item doesn't resolve -- placeholder payloads, or an item id
+    # the judge hasn't pushed the category for -- would deliver that promise
+    # empty, so hand it to the sparse-context composer instead of announcing
+    # an item that isn't there.
+    if not title.strip():
+        return fallback(ctx)
     source = item["source"]
     cite = f" ({source})" if source else ""
     action = item["action"]
