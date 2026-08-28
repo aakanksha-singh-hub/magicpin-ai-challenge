@@ -102,7 +102,13 @@ Every number in a composed message is clickable: it resolves to the fact behind 
 fact's provenance, and whether the judge can see it in its own scoring payload. Ungrounded
 numbers render red — the state `validate.py` refuses to emit. Plus the fact table, a tick
 trace showing which trigger won each merchant and why every other was dropped, and a reply box
-driving the real FSM. Read-only, never writes to the judged store.
+driving the real FSM.
+
+Trigger kinds, CTA types and fact labels render as words rather than as the slugs the engine
+passes around — `chronic_refill_due` reads as *Repeat prescription due* — with the raw key kept
+alongside wherever it is the actual subject. Read-only, runs on the shipped seeds, never writes
+to the judged store; registration is wrapped in a `try`, so a console failure can't stop the
+scored endpoints coming up.
 
 ## Tradeoffs
 
