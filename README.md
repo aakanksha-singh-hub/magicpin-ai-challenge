@@ -18,7 +18,7 @@ POST /v1/context   POST /v1/tick   POST /v1/reply   GET /v1/healthz   GET /v1/me
 ## The finding that shaped the design
 
 Before writing code, I scored the challenge's own gold message — Case Study 1, documented at
-**50/50** — through `judge_simulator.py`'s exact `LLMScorer.SYSTEM` prompt. `gpt-4o-mini`
+**50/50** — through [`judge_simulator.py`](judge_simulator.py)'s exact `LLMScorer.SYSTEM` prompt. `gpt-4o-mini`
 gave it **41/50**. A stronger model gave it **29/50**, killing it on the citation: *"none are
 supported by the payload."*
 
@@ -39,7 +39,7 @@ above 45, so the real ceiling is 44–45, not 50.
 
 ## Why deterministic
 
-`api-call-examples.md` budgets 10s for tick/reply; the simulator enforces 15s socket timeouts
+[`api-call-examples.md`](examples/api-call-examples.md) budgets 10s for tick/reply; the simulator enforces 15s socket timeouts
 and can request 20 actions per tick. An LLM per action times out.
 
 It also makes the worst penalty impossible by construction. Every number is registered in a
@@ -51,15 +51,15 @@ be expressed.
 
 | Module | Role |
 |---|---|
-| `store.py` | versioned context store — idempotent on `(scope, id, version)`, atomic replace, snapshot |
-| `facts.py` | `FactPack`: derives every citable fact, tagging which ones the judge can see |
-| `decide.py` | which signal earns this moment: urgency × payload richness × corroboration, minus suppression, opt-out, consent, send caps |
-| `compose.py` | plan → `hook / evidence / insight / proposal / CTA`, CTA always last |
-| `strategies.py` | ~30 per-trigger-kind composers + sparse-context and customer fallbacks |
-| `voice.py` | per-category register, guardian/senior addressing, Hinglish code-mix, taboo list |
-| `validate.py` | URLs, single CTA, jargon, taboo words, ungrounded numbers, anchor floor |
-| `converse.py` | inbound classifier + reply FSM |
-| `console.py` | read-only inspection UI, outside the scored surface |
+| [`store.py`](vera/store.py) | versioned context store — idempotent on `(scope, id, version)`, atomic replace, snapshot |
+| [`facts.py`](vera/facts.py) | `FactPack`: derives every citable fact, tagging which ones the judge can see |
+| [`decide.py`](vera/decide.py) | which signal earns this moment: urgency × payload richness × corroboration, minus suppression, opt-out, consent, send caps |
+| [`compose.py`](vera/compose.py) | plan → `hook / evidence / insight / proposal / CTA`, CTA always last |
+| [`strategies.py`](vera/strategies.py) | ~30 per-trigger-kind composers + sparse-context and customer fallbacks |
+| [`voice.py`](vera/voice.py) | per-category register, guardian/senior addressing, Hinglish code-mix, taboo list |
+| [`validate.py`](vera/validate.py) | URLs, single CTA, jargon, taboo words, ungrounded numbers, anchor floor |
+| [`converse.py`](vera/converse.py) | inbound classifier + reply FSM |
+| [`console.py`](vera/console.py) | read-only inspection UI, outside the scored surface |
 
 ## Decisions worth calling out
 
@@ -100,7 +100,7 @@ Commitment jumps straight to execution with one confirm. Hostility and opt-outs 
 
 Every number in a composed message is clickable: it resolves to the fact behind it, that
 fact's provenance, and whether the judge can see it in its own scoring payload. Ungrounded
-numbers render red — the state `validate.py` refuses to emit. Plus the fact table, a tick
+numbers render red — the state [`validate.py`](vera/validate.py) refuses to emit. Plus the fact table, a tick
 trace showing which trigger won each merchant and why every other was dropped, and a reply box
 driving the real FSM.
 
@@ -129,7 +129,7 @@ The bot holds pushed context in memory, and Render's free tier spins a service d
 ~15 minutes without inbound traffic. A spin-down between the judge's context push and its
 tick drops everything and the tick returns nothing.
 
-**The self-ping is what keeps it up.** `app.py` starts a thread that requests its own public
+**The self-ping is what keeps it up.** [`app.py`](vera/app.py) starts a thread that requests its own public
 `/v1/healthz` every 10 minutes; the request leaves the instance and returns through Render's
 edge, so it counts as inbound traffic. Set in Render → Environment:
 
@@ -142,7 +142,7 @@ VERA_SUBMITTED_AT       <the real submission timestamp>
 Measured: 9.2 hours of continuous uptime with a 6.7-hour stretch of zero external traffic,
 against a 15-minute idle timeout.
 
-**`.github/workflows/keepalive.yml` is an alarm, not the keepalive.** It asks for a ping
+**[`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml) is an alarm, not the keepalive.** It asks for a ping
 every 10 minutes and fails the run when the bot doesn't answer, so a dead endpoint emails
 rather than sitting quietly dead. It is not load-bearing for uptime: GitHub throttles
 scheduled workflows on shared runners, and this one managed one scheduled run in nine hours
@@ -161,7 +161,7 @@ python tools/sweep.py --all-triggers                     # every message + guard
 OAI=<key> python tools/llmscore.py --model gpt-4o-mini   # score with the judge's own rubric
 ```
 
-`harness.py` replays the judge lifecycle — warmup, idempotency, ticks, adaptive injection and
-all three replay scenarios — against the 10s budgets, no LLM required. `llmscore.py` imports
-`LLMScorer.SYSTEM` straight from `judge_simulator.py`, so tuning happens against the real
+[`harness.py`](tools/harness.py) replays the judge lifecycle — warmup, idempotency, ticks, adaptive injection and
+all three replay scenarios — against the 10s budgets, no LLM required. [`llmscore.py`](tools/llmscore.py) imports
+`LLMScorer.SYSTEM` straight from [`judge_simulator.py`](judge_simulator.py), so tuning happens against the real
 grader.
