@@ -126,19 +126,12 @@ structured price list (offers are title strings, so the engine can't pick *which
 ## Keeping it awake
 
 The bot holds pushed context in memory, and Render's free tier spins a service down after
-~15 minutes without inbound traffic. A spin-down mid-run drops everything the judge pushed,
-so the next tick returns nothing. Two independent layers guard against that:
+~15 minutes without inbound traffic. A spin-down between the judge's context push and its
+tick drops everything and the tick returns nothing.
 
-| Layer | Where | Survives |
-|---|---|---|
-| `.github/workflows/keepalive.yml` | GitHub Actions, every 10 min | anything short of GitHub itself being down |
-| `VERA_KEEPALIVE_URL` | in-process self-ping, `app.py` | idle spin-down, but dies with the container |
-
-The workflow also **fails loudly** when the bot doesn't answer, so a dead endpoint sends an
-email rather than sitting quietly dead through the judging window. Point it at a different
-host by setting an Actions variable named `BOT_URL`.
-
-To arm the second layer, add these in Render → Environment:
+**The self-ping is what keeps it up.** `app.py` starts a thread that requests its own public
+`/v1/healthz` every 10 minutes; the request leaves the instance and returns through Render's
+edge, so it counts as inbound traffic. Set in Render → Environment:
 
 ```
 VERA_KEEPALIVE_URL      https://magicpin-ai-challenge-ozhb.onrender.com
@@ -146,9 +139,18 @@ VERA_KEEPALIVE_SECONDS  600
 VERA_SUBMITTED_AT       <the real submission timestamp>
 ```
 
-The self-ping leaves the instance and returns through Render's edge, so it counts as inbound
-traffic. Two layers because they fail differently: the workflow keeps working if the app
-wedges, and the self-ping keeps working if GitHub throttles the schedule.
+Measured: 9.2 hours of continuous uptime with a 6.7-hour stretch of zero external traffic,
+against a 15-minute idle timeout.
+
+**`.github/workflows/keepalive.yml` is an alarm, not the keepalive.** It asks for a ping
+every 10 minutes and fails the run when the bot doesn't answer, so a dead endpoint emails
+rather than sitting quietly dead. It is not load-bearing for uptime: GitHub throttles
+scheduled workflows on shared runners, and this one managed one scheduled run in nine hours
+against a `*/10` cron. Treat sub-hourly GitHub cron as best-effort monitoring — never as a
+heartbeat something depends on. Point it at another host with an Actions variable `BOT_URL`.
+
+The two layers fail differently, which is the point: the self-ping dies with the container,
+and the alarm is what tells you it did.
 
 ## Testing
 

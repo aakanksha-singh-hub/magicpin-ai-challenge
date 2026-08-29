@@ -1,12 +1,18 @@
-# Keeps the Render free instance from idling out, and doubles as an uptime alarm.
+# Uptime alarm for the bot. NOT the keepalive -- see below.
 #
-# Why this exists: the bot holds pushed context in memory. Render's free tier
-# spins a service down after ~15 minutes with no inbound traffic, and a spin-down
-# mid-run drops every context the judge pushed, so the next tick returns nothing.
-# A request every 10 minutes keeps the instance warm with 5 minutes of margin.
+# The job FAILS when the bot does not answer, so a dead endpoint emails you
+# instead of sitting quietly dead through the judging window. That is this
+# file's actual job.
 #
-# The job FAILS if the bot does not answer, so GitHub emails you rather than
-# leaving a dead endpoint quietly dead during the judging window.
+# It is deliberately not load-bearing for uptime. GitHub throttles scheduled
+# workflows on shared runners: this cron asks for every 10 minutes and in
+# practice managed one scheduled run in nine hours. Sub-hourly GitHub cron is
+# best-effort monitoring, never a heartbeat something depends on.
+#
+# What actually keeps the instance warm is the in-process self-ping in app.py,
+# armed by VERA_KEEPALIVE_URL. Render's free tier spins a service down after
+# ~15 minutes without inbound traffic, and the bot holds pushed context in
+# memory, so a spin-down between the judge's push and its tick loses everything.
 
 name: keepalive
 
